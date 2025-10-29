@@ -1,0 +1,317 @@
+{
+  "name": "agentic-flow-designer",
+  "version": "0.1.0",
+  "description": "Given a task description, orchestrates planning and coding agents to produce an optimal agentic flow and the supporting code using the OpenAI Agents SDK.",
+  "tags": [
+    "planning",
+    "agents",
+    "codegen"
+  ],
+  "servers": [
+    {
+      "type": "python",
+      "entrypoint": "server.py",
+      "requirements": [
+        "mcp>=0.1.4",
+        "openai>=1.14.0",
+        "pydantic>=2.5.0"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "assess_delegation_need",
+      "description": "Decide whether a task should be decomposed into agentic sub-routines.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Primary task description."
+          },
+          "available_tools": {
+            "type": "array",
+            "description": "Additional tools/APIs to expose; Codex core and this MCP's endpoints are always included.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "planner_model": {
+            "type": "string",
+            "description": "Model identifier for the triage assessment (defaults to 'gpt-4o-mini').",
+            "default": "gpt-4o-mini"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature for the assessment.",
+            "default": 0.2
+          },
+          "complexity_hint": {
+            "type": "string",
+            "description": "Optional context about constraints, quality bars, or risks."
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "design_agentic_solution",
+      "description": "Designs an optimal agent hierarchy for a task, then produces Agents SDK code implementing the plan.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Detailed description of the user's desired outcome."
+          },
+          "planner_model": {
+            "type": "string",
+            "description": "OpenAI model identifier to use for the planning agent (defaults to 'gpt-4o-mini').",
+            "default": "gpt-4o-mini"
+          },
+          "coder_model": {
+            "type": "string",
+            "description": "OpenAI model identifier to use for the coding agent (defaults to 'gpt-4.1-mini').",
+            "default": "gpt-4.1-mini"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature to use for both planning and coding phases.",
+            "default": 0.2
+          },
+          "available_tools": {
+            "type": "array",
+            "description": "Additional tool/API identifiers to advertise; Codex core and this MCP's endpoints are auto-included.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "execute_agentic_workflow",
+      "description": "Simulate running the generated agent workflow and persist the code locally.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "object",
+            "description": "Plan payload previously returned by design_agentic_solution."
+          },
+          "implementation": {
+            "type": "object",
+            "description": "Implementation bundle (filename/code/setup instructions)."
+          },
+          "task_context": {
+            "type": "object",
+            "description": "Runtime context to seed the workflow.",
+            "default": {}
+          },
+          "available_tools": {
+            "type": "array",
+            "description": "Additional tools/APIs to assume during execution; Codex core and this MCP's endpoints are always exposed.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workspace_path": {
+            "type": "string",
+            "description": "Directory where the workflow code should be written (defaults to ./agentic_workflows)."
+          },
+          "simulate_only": {
+            "type": "boolean",
+            "description": "Set to false to request real execution (currently falls back to simulation).",
+            "default": true
+          }
+        },
+        "required": [
+          "plan",
+          "implementation"
+        ]
+      }
+    },
+    {
+      "name": "evaluate_agentic_outputs",
+      "description": "Score agent outputs and generate improvement feedback.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "object",
+            "description": "Plan payload that guided execution."
+          },
+          "execution_report": {
+            "type": "object",
+            "description": "Execution report produced by execute_agentic_workflow."
+          },
+          "evaluation_criteria": {
+            "type": "string",
+            "description": "Optional rubric or success definition."
+          },
+          "available_tools": {
+            "type": "array",
+            "description": "Additional tools/APIs leveraged in evaluation; Codex core and this MCP's endpoints are always available.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evaluator_model": {
+            "type": "string",
+            "description": "Model identifier for evaluation (defaults to 'gpt-4.1-mini').",
+            "default": "gpt-4.1-mini"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature for evaluation responses.",
+            "default": 0.2
+          }
+        },
+        "required": [
+          "plan",
+          "execution_report"
+        ]
+      }
+    },
+    {
+      "name": "summarize_agent_feedback",
+      "description": "Turn a workflow evaluation payload into concise feedback for replanning.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "evaluation": {
+            "type": "object",
+            "description": "Workflow evaluation payload."
+          }
+        },
+        "required": [
+          "evaluation"
+        ]
+      }
+    },
+    {
+      "name": "revise_agentic_solution",
+      "description": "Request a revised agent workflow and implementation using feedback from a prior attempt.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Primary task description for context."
+          },
+          "previous_plan": {
+            "type": "object",
+            "description": "Plan payload previously returned by design_agentic_solution."
+          },
+          "feedback": {
+            "type": "string",
+            "description": "Detailed notes about what needs to change or issues encountered."
+          },
+          "planner_model": {
+            "type": "string",
+            "description": "Model identifier for the planning phase (defaults to 'gpt-4o-mini').",
+            "default": "gpt-4o-mini"
+          },
+          "coder_model": {
+            "type": "string",
+            "description": "Model identifier for the coding phase (defaults to 'gpt-4.1-mini').",
+            "default": "gpt-4.1-mini"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature to use for both planning and coding phases.",
+            "default": 0.2
+          },
+          "available_tools": {
+            "type": "array",
+            "description": "Additional tool/API identifiers the workflow may reference; Codex core and this MCP's endpoints are always available.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "regenerate_code": {
+            "type": "boolean",
+            "description": "Set to false to reuse a previous implementation bundle.",
+            "default": true
+          },
+          "previous_implementation": {
+            "type": "object",
+            "description": "Implementation payload to reuse when regenerate_code is false."
+          }
+        },
+        "required": [
+          "task",
+          "previous_plan",
+          "feedback"
+        ]
+      }
+    },
+    {
+      "name": "run_agentic_cycle",
+      "description": "End-to-end loop: plan, simulate execution, evaluate, and iterate until success or limits hit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Primary task description."
+          },
+          "available_tools": {
+            "type": "array",
+            "description": "Additional tools the workflow may leverage; Codex core and this MCP's endpoints are auto-included.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "task_context": {
+            "type": "object",
+            "description": "Initial runtime context passed to execution simulation.",
+            "default": {}
+          },
+          "max_iterations": {
+            "type": "integer",
+            "description": "Maximum number of refinement passes.",
+            "default": 3
+          },
+          "target_score": {
+            "type": "number",
+            "description": "Score threshold (0-1) required to stop iterating.",
+            "default": 0.85
+          },
+          "planner_model": {
+            "type": "string",
+            "description": "Model identifier for planning.",
+            "default": "gpt-4o-mini"
+          },
+          "coder_model": {
+            "type": "string",
+            "description": "Model identifier for coding.",
+            "default": "gpt-4.1-mini"
+          },
+          "evaluator_model": {
+            "type": "string",
+            "description": "Model identifier for evaluations.",
+            "default": "gpt-4.1-mini"
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature for planning/coding/evaluation.",
+            "default": 0.2
+          },
+          "evaluation_criteria": {
+            "type": "string",
+            "description": "Optional rubric or quality bar."
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    }
+  ]
+}

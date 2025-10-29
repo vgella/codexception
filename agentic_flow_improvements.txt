@@ -1,0 +1,8 @@
+Improvements for agentic-flow-designer MCP tool:
+
+1. Parallel orchestration: return a dependency DAG so agents can run concurrently and describe how to schedule ready nodes.
+2. Actionable manifests: emit concrete steps (commands, file targets) for each agent instead of narrative guidance.
+3. Tool awareness: accept the caller's available tool list and constrain agent suggestions to those capabilities.
+4. Structured data flow: define explicit input/output schemas so Codex can pass artifacts between agents reliably.
+5. Environment prerequisites: list required environment variables, secrets, and validation commands per agent.
+6. Iterative feedback: support an update endpoint for partial results or failures to request revised plans.
