@@ -30,6 +30,256 @@ def _normalize_tools(available_tools: Optional[List[str]]) -> List[str]:
     return merged
 
 
+DELEGATION_AGENT_NAME = "delegation-orchestrator"
+
+
+def _ensure_str_list(values: Any) -> List[str]:
+    if not values:
+        return []
+    if isinstance(values, (set, tuple)):
+        values = list(values)
+    return [str(item) for item in values if item is not None]
+
+
+def _sanitize_schema_fields(fields: Any) -> List[Dict[str, Any]]:
+    sanitized: List[Dict[str, Any]] = []
+    if not isinstance(fields, list):
+        return sanitized
+    for entry in fields:
+        if not isinstance(entry, dict):
+            continue
+        item = dict(entry)
+        item_name = str(item.get("name", "unnamed_field"))
+        item_type = str(item.get("type", "string"))
+        description = item.get("description")
+        if not description:
+            description = f"Description for {item_name}"
+        source = item.get("source")
+        item["name"] = item_name
+        item["type"] = item_type
+        item["description"] = str(description)
+        if source is not None:
+            item["source"] = str(source)
+        item["required"] = bool(item.get("required", True))
+        sanitized.append(item)
+    return sanitized
+
+
+def _sanitize_actions(actions: Any) -> List[Dict[str, Any]]:
+    sanitized: List[Dict[str, Any]] = []
+    if not isinstance(actions, list):
+        return sanitized
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        step_text = str(action.get("step", "Describe action"))
+        description = action.get("description")
+        if not description:
+            description = f"Execute task: {step_text}."
+        command = action.get("command")
+        notes = action.get("notes")
+        item = {
+            "step": step_text,
+            "description": str(description),
+            "command": str(command) if command else "",
+            "notes": str(notes) if notes else "",
+            "produces": _ensure_str_list(action.get("produces")),
+        }
+        sanitized.append(item)
+    return sanitized
+
+
+def _sanitize_environment(environment: Any) -> Dict[str, Any]:
+    if not isinstance(environment, dict):
+        environment = {}
+    env = dict(environment)
+    env["env_vars"] = _ensure_str_list(env.get("env_vars"))
+    env["secrets"] = _ensure_str_list(env.get("secrets"))
+    env["validation_commands"] = _ensure_str_list(env.get("validation_commands"))
+    return env
+
+
+def _sanitize_plan_payload(plan_dict: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(plan_dict, dict):
+        raise RuntimeError("Planner response was not an object.")
+    plan = dict(plan_dict)
+    plan = _inject_delegation_orchestrator(plan)
+    plan["summary"] = str(plan.get("summary", ""))
+    plan["global_context"] = _ensure_str_list(plan.get("global_context"))
+    plan["execution_order"] = _ensure_str_list(plan.get("execution_order"))
+
+    execution_graph = []
+    for node in plan.get("execution_graph", []) or []:
+        if not isinstance(node, dict):
+            continue
+        item = dict(node)
+        item["id"] = str(item.get("id", ""))
+        item["agent"] = str(item.get("agent", ""))
+        item["description"] = str(item.get("description", ""))
+        item["depends_on"] = _ensure_str_list(item.get("depends_on"))
+        execution_graph.append(item)
+    plan["execution_graph"] = execution_graph
+
+    plan["shared_artifacts"] = _sanitize_schema_fields(plan.get("shared_artifacts"))
+
+    agents_payload = []
+    for agent in plan.get("agents", []) or []:
+        if not isinstance(agent, dict):
+            continue
+        entry = dict(agent)
+        entry["name"] = str(entry.get("name", ""))
+        entry["mission"] = str(entry.get("mission", ""))
+        if entry.get("suggested_model") is not None:
+            entry["suggested_model"] = str(entry["suggested_model"])
+        entry["key_tools"] = _ensure_str_list(entry.get("key_tools"))
+        entry["handoff"] = str(entry.get("handoff", ""))
+        entry["actions"] = _sanitize_actions(entry.get("actions"))
+        entry["inputs_schema"] = _sanitize_schema_fields(entry.get("inputs_schema"))
+        entry["outputs_schema"] = _sanitize_schema_fields(entry.get("outputs_schema"))
+        entry["environment"] = _sanitize_environment(entry.get("environment"))
+        agents_payload.append(entry)
+    plan["agents"] = agents_payload
+    return plan
+
+
+def _inject_delegation_orchestrator(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Guarantee the plan contains a delegation orchestrator agent and execution stage."""
+    agents = plan.get("agents") or []
+    for agent in agents:
+        name = ""
+        if isinstance(agent, dict):
+            name = str(agent.get("name", "")).lower()
+        if DELEGATION_AGENT_NAME in name or "delegation orchestrator" in name:
+            return plan
+
+    orchestrator_agent = {
+        "name": DELEGATION_AGENT_NAME,
+        "mission": "Continuously evaluate the workflow, decide when to recursively delegate sub-tasks via Codex, and merge delegated results back into the main effort.",
+        "suggested_model": "gpt-4.1-mini",
+        "key_tools": DEFAULT_CODEX_HANDOFF_TOOLS,
+        "handoff": "Shares delegation findings and synthesized outputs with the final delivery agent.",
+        "actions": [
+            {
+                "step": "Assess the latest workflow state and identify sub-tasks that warrant deeper delegation.",
+                "description": "Review accumulated artifacts, risks, and blockers to determine whether spawning additional Codex-driven agents will improve quality.",
+                "command": "",
+                "produces": ["delegation_observations"],
+                "notes": "",
+            },
+            {
+                "step": "Invoke recursive delegation via Codex/MCP helpers when deeper specialization is justified.",
+                "description": "Call delegate_via_codex or run_recursive_delegation with a precise sub-task brief and tool inventory, then monitor the spawned workflow.",
+                "command": "",
+                "produces": ["delegation_run_reports"],
+                "notes": "",
+            },
+            {
+                "step": "Integrate delegated outputs back into the parent workflow.",
+                "description": "Merge artifacts, decisions, and risks from delegated runs, updating shared context so downstream agents act on the latest information.",
+                "command": "",
+                "produces": ["delegation_summary", "updated_shared_context"],
+                "notes": "",
+            },
+        ],
+        "inputs_schema": [
+            {
+                "name": "workflow_snapshot",
+                "type": "object",
+                "description": "Current state of tasks, artifacts, and outstanding questions gathered across agents.",
+                "required": True,
+            },
+            {
+                "name": "available_tools",
+                "type": "array<string>",
+                "description": "Tool inventory the orchestrator may surface to recursive delegates.",
+                "required": False,
+            },
+        ],
+        "outputs_schema": [
+            {
+                "name": "delegation_summary",
+                "type": "string",
+                "description": "Narrative recap of recursive delegation runs, including key findings and unresolved issues.",
+                "required": True,
+            },
+            {
+                "name": "updated_shared_context",
+                "type": "object",
+                "description": "Merged context map incorporating outputs from delegated workflows.",
+                "required": True,
+            },
+            {
+                "name": "delegation_decisions",
+                "type": "array<string>",
+                "description": "Traceable log describing each delegation decision, the rationale, and follow-up actions.",
+                "required": True,
+            },
+        ],
+        "environment": {
+            "env_vars": ["OPENAI_API_KEY"],
+            "secrets": [],
+            "validation_commands": [],
+        },
+    }
+
+    agents.append(orchestrator_agent)
+    plan["agents"] = agents
+
+    execution_order = plan.get("execution_order") or []
+    orchestrator_stage = "Delegation orchestrator reviews progress and triggers recursive delegation when needed."
+    if orchestrator_stage not in execution_order:
+        execution_order.append(orchestrator_stage)
+    plan["execution_order"] = execution_order
+
+    execution_graph = plan.get("execution_graph") or []
+    existing_ids = [
+        str(node.get("id"))
+        for node in execution_graph
+        if isinstance(node, dict) and node.get("id") is not None
+    ]
+    staged_id = "delegation_orchestrator"
+    if staged_id not in existing_ids:
+        depends_on = [node_id for node_id in existing_ids if node_id]
+        execution_graph.append(
+            {
+                "id": staged_id,
+                "agent": DELEGATION_AGENT_NAME,
+                "description": "Supervise workflow delegation opportunities and integrate recursive outputs.",
+                "depends_on": depends_on,
+            }
+        )
+    plan["execution_graph"] = execution_graph
+
+    shared_artifacts = plan.get("shared_artifacts") or []
+    artifact_names = {
+        str(item.get("name"))
+        for item in shared_artifacts
+        if isinstance(item, dict) and item.get("name")
+    }
+    if "delegation_summary" not in artifact_names:
+        shared_artifacts.append(
+            {
+                "name": "delegation_summary",
+                "type": "string",
+                "description": "Summary of all recursive delegation runs and their outcomes.",
+                "required": False,
+                "source": DELEGATION_AGENT_NAME,
+            }
+        )
+    if "updated_shared_context" not in artifact_names:
+        shared_artifacts.append(
+            {
+                "name": "updated_shared_context",
+                "type": "object",
+                "description": "Consolidated context updated after delegation cycles.",
+                "required": False,
+                "source": DELEGATION_AGENT_NAME,
+            }
+        )
+    plan["shared_artifacts"] = shared_artifacts
+    return plan
+
+
 class SchemaField(BaseModel):
     """Structured description of data exchanged between agents."""
 
@@ -386,6 +636,7 @@ Respond strictly as minified JSON with the following top-level keys:
 Schema field objects must include: name, type, description, required (bool), optional source.
 Every agent name must be unique and action-oriented.
 Ensure at least one agent covers final validation/handoff.
+Include a dedicated delegation orchestrator agent whose mission is to evaluate when to spawn recursive Codex/MCP delegations; detail its decision criteria, escalation triggers, and how results flow back to the main workflow.
 Respect any provided tool availability; do not invent tools not listed.
 Reference dependencies using execution_graph IDs to indicate parallelisable stages.
     """.strip()
@@ -440,6 +691,7 @@ Reference dependencies using execution_graph IDs to indicate parallelisable stag
         plan_dict = json.loads(plan_payload)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Planner returned invalid JSON: {exc}\nRaw output:\n{plan_payload}") from exc
+    plan_dict = _sanitize_plan_payload(plan_dict)
     try:
         return AgenticFlowPlan.model_validate(plan_dict)
     except ValidationError as exc:
@@ -537,6 +789,13 @@ using the OpenAI Agents SDK (beta). The code must:
 5. Expose a `run_workflow(task_context: dict) -> None` entrypoint that handles routing of structured inputs/outputs between agents according to their schema definitions.
 6. Validate environment prerequisites (env vars, secrets) before running each agent and surface actionable errors.
 7. Include inline guidance on how to extend or execute the workflow.
+8. Implement reusable helpers `delegate_via_codex(subtask_description: str, tools: list[str], context: dict) -> dict` and `run_recursive_delegation(subtask_description: str, tools: list[str], context: dict) -> dict` that:
+   - call Codex or the agentic-flow-designer MCP to spawn new plans,
+   - persist delegated plan/code under `agentic_workflows/delegated/`,
+   - run simulation/evaluation loops, and
+   - return merged artifacts plus feedback to the caller.
+9. Ensure the Delegation Orchestrator agent uses these helpers to decide when to branch, enforcing a `MAX_DELEGATION_DEPTH` guard and capturing a `delegation_history` log.
+10. Merge outputs from delegated runs back into the parent workflow's shared context before downstream agents continue.
 
 Return your answer as compact JSON with the keys:
 - filename: string (suggested filename under the caller's project root)

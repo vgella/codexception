@@ -47,6 +47,7 @@ After registration simply chat with Codex; when the assistant sees a complex tas
 1. Call `assess_delegation_need` to decide whether agentic delegation will help.
 2. Use `design_agentic_solution` (and `revise_agentic_solution` when needed) to build/iterate on agent code.
 3. Simulate runs via `execute_agentic_workflow`, grade them with `evaluate_agentic_outputs`, summarise feedback, and loop through `run_agentic_cycle` for fully automated refinement.
+4. Rely on the injected delegation orchestrator agent, which can recursively call Codex/agentic-flow-designer helpers (`delegate_via_codex`, `run_recursive_delegation`) to spawn deeper sub-plans and merge their outputs.
 
 Tip: Add a default instruction so Codex reaches for these tools automatically. In `~/.codex/config.toml` add something like:
 

@@ -26,6 +26,7 @@ The server automatically exposes Codex itself plus every endpoint in this suite 
 4. **Execution Simulation** – `execute_agentic_workflow` persists the generated file under `agentic_workflows/` and simulates a run, producing per-agent traces and shared artifacts.
 5. **Evaluation & Feedback** – `evaluate_agentic_outputs` grades the simulation, while `summarize_agent_feedback` distills the findings so you can `revise_agentic_solution`.
 6. **Closed-Loop Automation** – `run_agentic_cycle` chains the above steps until the workflow hits a target score or max iterations.
+7. **Delegation Oversight** – Every plan injects a delegation orchestrator agent that can recursively invoke Codex/agentic-flow-designer through helpers like `delegate_via_codex` and `run_recursive_delegation`, persisting delegated runs under `agentic_workflows/delegated/` and merging their artifacts back into the main workflow.
 
 Whenever you pass an `available_tools` list, the server merges it with Codex core plus these MCP endpoints, ensuring downstream agents know they can invoke Codex again and keep breaking tasks down.
 
