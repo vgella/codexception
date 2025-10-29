@@ -39,7 +39,7 @@ The Codex CLI expects an absolute command for MCP servers. A helper script is pr
 ```bash
 codex mcp remove agentic-flow-designer  # only if you registered an earlier version
 codex mcp add agentic-flow-designer \
-  /mnt/c/Users/jyoth/Desktop/om_Lakshmeya_namaha/ditra/codex_tools/agentic_flow_designer/run_server.sh
+  "$(pwd)/agentic_flow_designer/run_server.sh"
 ```
 
 After registration simply chat with Codex; when the assistant sees a complex task it can:

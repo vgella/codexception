@@ -61,7 +61,7 @@ export OPENAI_API_KEY=sk-...
 3. Add the updated tool, pointing Codex at the helper script so it can manage the working directory and logging:
    ```bash
    codex mcp add agentic-flow-designer \
-     /mnt/c/Users/jyoth/Desktop/om_Lakshmeya_namaha/ditra/codex_tools/agentic_flow_designer/run_server.sh
+     "$(pwd)/agentic_flow_designer/run_server.sh"
    ```
 
 After registration, the Codex CLI can invoke these tools on demand. Include a default instruction in `~/.codex/config.toml` if you want Codex to reach for them automatically when tasks look multi-step:
